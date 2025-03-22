@@ -87,8 +87,8 @@ def get_contract_values(contract, admin_address, owner_address):
     onchain_root = contract.functions.merkleRoot().call()
     has_role = contract.functions.hasRole(default_admin_role, admin_address).call()
     
-    # Print available functions to debug
-    print([func.fn_name for func in contract.all_functions()])
+    # # Print available functions to debug
+    # print([func.fn_name for func in contract.all_functions()])
 
     prime = contract.functions.getPrimeByOwner(owner_address).call()
 
