@@ -11,58 +11,84 @@ from web3.providers.rpc import HTTPProvider
 # infura_url = f"https://mainnet.infura.io/v3/{infura_token}"
 
 def connect_to_eth():
-	# TODO insert your code for this method from last week's assignment
+	url = "https://mainnet.infura.io/v3/fd63f35277f44785b28203d0aad096ed"  # FILL THIS IN
+	w3 = Web3(HTTPProvider(url))
+	assert w3.is_connected(), f"Failed to connect to provider at {url}"
 	return w3
 
 
 def connect_with_middleware(contract_json):
-	# TODO insert your code for this method from last week's assignment
-	return w3, contract
+    with open(contract_json, "r") as f:
+        d = json.load(f)
+        d = d['bsc']
+        address = d['address']
+        abi = d['abi']
+
+    # The first section will be the same as "connect_to_eth()" but with a BNB url
+    url = "https://bsc-testnet.drpc.org"
+    w3 = Web3(HTTPProvider(url))
+    assert w3.is_connected(), f"Failed to connect to provider at {url}"
+
+    # Inject middleware into the w3 object
+    w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+
+    # Create a contract object
+    contract = w3.eth.contract(address=address, abi=abi)
+
+    return w3, contract
 
 
 def is_ordered_block(w3, block_num):
-	"""
-	Takes a block number
-	Returns a boolean that tells whether all the transactions in the block are ordered by priority fee
+    """
+    Takes a block number
+    Returns a boolean that tells whether all the transactions in the block are ordered by priority fee
 
-	Before EIP-1559, a block is ordered if and only if all transactions are sorted in decreasing order of the gasPrice field
+    Before EIP-1559, a block is ordered if and only if all transactions are sorted in decreasing order of the gasPrice field
 
-	After EIP-1559, there are two types of transactions
-		*Type 0* The priority fee is tx.gasPrice - block.baseFeePerGas
-		*Type 2* The priority fee is min( tx.maxPriorityFeePerGas, tx.maxFeePerGas - block.baseFeePerGas )
+    After EIP-1559, there are two types of transactions
+        *Type 0* The priority fee is tx.gasPrice - block.baseFeePerGas
+        *Type 2* The priority fee is min( tx.maxPriorityFeePerGas, tx.maxFeePerGas - block.baseFeePerGas )
 
-	Conveniently, most type 2 transactions set the gasPrice field to be min( tx.maxPriorityFeePerGas + block.baseFeePerGas, tx.maxFeePerGas )
-	"""
-	block = w3.eth.get_block(block_num, full_transactions=True)
-	ordered = False
+    Conveniently, most type 2 transactions set the gasPrice field to be min( tx.maxPriorityFeePerGas + block.baseFeePerGas, tx.maxFeePerGas )
+    """
+    block = w3.eth.get_block(block_num, full_transactions=True)
+    transactions = block['transactions']
+    
+    def get_priority_fee(tx):
+        if tx['type'] == '0x0':
+            return tx['gasPrice'] - block['baseFeePerGas']
+        elif tx['type'] == '0x2':
+            return min(tx['maxPriorityFeePerGas'], tx['maxFeePerGas'] - block['baseFeePerGas'])
+        else:
+            return tx['gasPrice']
 
-	# TODO YOUR CODE HERE
+    priority_fees = [get_priority_fee(tx) for tx in transactions]
+    ordered = all(priority_fees[i] >= priority_fees[i + 1] for i in range(len(priority_fees) - 1))
 
-	return ordered
+    return ordered
 
 
 def get_contract_values(contract, admin_address, owner_address):
-	"""
-	Takes a contract object, and two addresses (as strings) to be used for calling
-	the contract to check current on chain values.
-	The provided "default_admin_role" is the correctly formatted solidity default
-	admin value to use when checking with the contract
-	To complete this method you need to make three calls to the contract to get:
-	  onchain_root: Get and return the merkleRoot from the provided contract
-	  has_role: Verify that the address "admin_address" has the role "default_admin_role" return True/False
-	  prime: Call the contract to get and return the prime owned by "owner_address"
+    """
+    Takes a contract object, and two addresses (as strings) to be used for calling
+    the contract to check current on chain values.
+    The provided "default_admin_role" is the correctly formatted solidity default
+    admin value to use when checking with the contract
+    To complete this method you need to make three calls to the contract to get:
+      onchain_root: Get and return the merkleRoot from the provided contract
+      has_role: Verify that the address "admin_address" has the role "default_admin_role" return True/False
+      prime: Call the contract to get and return the prime owned by "owner_address"
 
-	check on available contract functions and transactions on the block explorer at
-	https://testnet.bscscan.com/address/0xaA7CAaDA823300D18D3c43f65569a47e78220073
-	"""
-	default_admin_role = int.to_bytes(0, 32, byteorder="big")
+    check on available contract functions and transactions on the block explorer at
+    https://testnet.bscscan.com/address/0xaA7CAaDA823300D18D3c43f65569a47e78220073
+    """
+    default_admin_role = int.to_bytes(0, 32, byteorder="big")
 
-	# TODO complete the following lines by performing contract calls
-	onchain_root = 0  # Get and return the merkleRoot from the provided contract
-	has_role = 0  # Check the contract to see if the address "admin_address" has the role "default_admin_role"
-	prime = 0  # Call the contract to get the prime owned by "owner_address"
+    onchain_root = contract.functions.merkleRoot().call()
+    has_role = contract.functions.hasRole(default_admin_role, admin_address).call()
+    prime = contract.functions.getPrime(owner_address).call()
 
-	return onchain_root, has_role, prime
+    return onchain_root, has_role, prime
 
 
 """
